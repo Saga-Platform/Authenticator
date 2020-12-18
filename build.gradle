@@ -22,6 +22,12 @@ sourceSets {
     test.resources.srcDirs = ['testresources']
 }
 
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+}
+
 repositories {
     mavenCentral()
     jcenter()
@@ -37,6 +43,7 @@ dependencies {
     implementation "io.ktor:ktor-jackson:$ktor_version"
     implementation "org.litote.kmongo:kmongo-coroutine:4.2.3"
     implementation group: 'at.favre.lib', name: 'bcrypt', version: '0.9.0'
+    implementation "org.redisson:redisson:3.14.0"
     testImplementation "io.ktor:ktor-server-tests:$ktor_version"
 
     compile 'io.jsonwebtoken:jjwt-api:0.11.2'
