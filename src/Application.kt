@@ -1,44 +1,32 @@
 package com.saga.authenticator
 
 import at.favre.lib.crypto.bcrypt.*
-import com.mongodb.*
 import io.ktor.application.*
 import io.ktor.auth.*
 import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
-import org.bson.*
-import org.litote.kmongo.coroutine.*
-import org.litote.kmongo.reactivestreams.*
+import io.ktor.util.*
 import java.util.*
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
-
+@KtorExperimentalAPI
 fun Application.module() {
-    val settings = MongoClientSettings.builder()
-        .applicationName("Authenticator")
-        .applyConnectionString(ConnectionString("mongodb+srv://dev:7W0z8OqgiN3TOGhZ@cluster0.llizg.mongodb.net/saga-dev?authSource=admin&replicaSet=atlas-i32jff-shard-0&readPreference=primary&appname=MongoDB%20Compass&ssl=true"))
-        .build()
-    val mongoClient = KMongo.createClient(settings = settings).coroutine
-    val mongoDb = mongoClient.getDatabase("saga-auth")
-    val users = mongoDb.getCollection<User>()
+    val users = UserService()
+    val tokens = TokenService()
 
-//    val conf = Config()
-//    conf.useSingleServer().address = "redis://redis-17469.c238.us-central1-2.gce.cloud.redislabs.com:17469"
-//    conf.useSingleServer().password = "SuperSecurePassword!"
-//    val redisClient = Redisson.create(conf)
-//
-//    //Key: token, value: user
-//    val map: Map<UUID, UUID> = redisClient.getMap("refreshTokens")
+    environment.monitor.subscribe(ApplicationStopPreparing) {
+        users.close()
+        tokens.close()
+    }
 
     install(Authentication) {
         basic {
             realm = "Sága Authentication Service"
-            validate {
-                users.findOne(Document.parse("{\"email\": \"" + it.name + "\"}")).takeIf { u ->
-                    BCrypt.verifyer().verify(it.password.toByteArray(), u?.passwordHash).verified
-                }
+            validate { creds ->
+                users.findByEmail(creds.name)
+                    .takeIf { user -> passwordMatches(creds.password, user) }
             }
         }
     }
@@ -46,33 +34,35 @@ fun Application.module() {
     routing {
         authenticate {
             get("/authenticate") {
-                call.response.cookies.append(
-                    Cookie(
-                        "refreshToken",
-                        "test-token-value-will-be-uuid",
-                        path = "/refresh",
-                        httpOnly = true
-                    )
-                )
-                TODO("Create and save real refreshToken and return new JWT here")
-            }
+                if (call.authentication.principal !is User)
+                    call.respond(HttpStatusCode.InternalServerError, "Principal was not an user, aborting")
+                else {
+                    val user = call.authentication.principal as User
 
-            get("/") {
-                call.respondText { call.authentication.principal.toString() }
+                    call.response.cookies.append(tokens.getRefreshTokenAsCookie(user))
+                    call.respondText(tokens.getAccessToken(user))
+                }
             }
         }
 
         get("/refresh") {
-            call.request.cookies["refreshToken"].let {
-                if (it != null)
-                    TODO("Return JWT here")
+            val token = call.request.cookies["refreshToken"]
+            val validationData = tokens.isRefreshTokenValid(token)
+            val isTokenValid = validationData.first
+            val subjectOrError = validationData.second
+
+            if (isTokenValid && subjectOrError is UUID) {
+                val user = users.findById(subjectOrError)
+                if (user == null)
+                    call.respond(HttpStatusCode.NotFound, "User ${validationData.second} doesn't exist")
                 else
-                    call.respond(HttpStatusCode.Unauthorized, "Missing refresh token")
-            }
+                    call.respondText(tokens.getAccessToken(user))
+            } else
+                call.respond(HttpStatusCode.BadRequest, "Invalid JWT Refresh token: $subjectOrError")
         }
 
         get("/keys") {
-            TODO("Key rotation (creation and purge)")
+            call.respondText(tokens.getAccessJwksJson())
         }
 
         post("/register") {
@@ -91,3 +81,6 @@ fun Application.module() {
         }
     }
 }
+
+fun passwordMatches(password: String, user: User?) =
+    BCrypt.verifyer().verify(password.toByteArray(), user?.passwordHash).verified
