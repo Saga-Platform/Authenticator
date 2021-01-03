@@ -4,3 +4,4 @@
 *.iml
 *.ipr
 *.iws
+/resources/application.conf
