@@ -7,72 +7,116 @@ import org.jose4j.jws.*
 import org.junit.jupiter.api.*
 
 private const val MAP_NAME = "testMap"
+private val k1 = RsaJwkGenerator.generateJwk(512)
+private val k2 = RsaJwkGenerator.generateJwk(512)
 
-@KtorExperimentalAPI
-class KeyringTest {
+interface KeyStoreTest<T : KeyStore> {
 
-    private val svc = RedissonKeyStore(mapName = MAP_NAME)
-    private val map: MutableMap<String, PublicJsonWebKey> = getRedissonClient().getMap(MAP_NAME)
-
-    private val k1: PublicJsonWebKey = RsaJwkGenerator.generateJwk(512)
-    private val k2: PublicJsonWebKey = RsaJwkGenerator.generateJwk(512)
+    fun getStore(): T
+    fun getBackingMap(): MutableMap<String, PublicJsonWebKey>
 
     @BeforeEach
     @AfterEach
-    fun cleanup() {
-        map.clear()
-    }
-
-    @Test
-    fun `Can instanciate with empty constructor`() {
-        assertDoesNotThrow { RedissonKeyStore() }
-    }
+    fun cleanup() = getBackingMap().clear()
 
     @Test
     fun `Get current key from keyring`() {
-        map[CURRENT_KEY] = k1
+        getBackingMap()[CURRENT_KEY] = k1
 
-        val actual = svc.getCurrent()
+        val actual = getStore().getCurrent()
 
         assertKeyEquals(actual, k1)
     }
 
     @Test
     fun `Get previous key from keyring`() {
-        map[PREVIOUS_KEY] = k1
+        getBackingMap()[PREVIOUS_KEY] = k1
 
-        val actual = svc.getPrevious()!!
+        val actual = getStore().getPrevious()!!
 
         assertKeyEquals(actual, k1)
     }
 
     @Test
     fun `Generate new key when current is null`() {
-        val actual = svc.getCurrent()
+        val actual = getStore().getCurrent()
 
         assertNewKey(actual)
     }
 
     @Test
     fun `Key rotation`() {
-        map[CURRENT_KEY] = k1
-        map[PREVIOUS_KEY] = k2
+        getBackingMap()[CURRENT_KEY] = k1
+        getBackingMap()[PREVIOUS_KEY] = k2
 
-        val curr = svc.getCurrent()
-        val prev: PublicJsonWebKey = svc.getPrevious()!!
+        val curr = getStore().getCurrent()
+        val prev: PublicJsonWebKey = getStore().getPrevious()!!
 
         assertKeyEquals(curr, k1)
         assertKeyEquals(prev, k2)
 
-        svc.rotateKeys()
+        getStore().rotateKeys()
 
-        val newCurr = svc.getCurrent()
-        val newPrev: PublicJsonWebKey = svc.getPrevious()!!
+        val newCurr = getStore().getCurrent()
+        val newPrev: PublicJsonWebKey = getStore().getPrevious()!!
 
         assertNewKey(newCurr)
         assertKeyEquals(newPrev, k1)
     }
 
+    @Test
+    fun `Test key rotation with null keys`() {
+        assertDoesNotThrow { getStore().rotateKeys() }
+
+        val newCurr = getStore().getCurrent()
+        val newPrev = getStore().getPrevious()
+
+        assertNewKey(newCurr)
+        assertThat(newPrev).isNull()
+    }
+
+    @Test
+    fun `Get and validate JWKS representation of keys`() {
+        getBackingMap()[CURRENT_KEY] = k1
+        getBackingMap()[PREVIOUS_KEY] = k2
+
+        val keys = getStore().getJwks().jsonWebKeys
+
+        assertKeyEquals(keys[0] as PublicJsonWebKey, k1)
+        assertKeyEquals(keys[1] as PublicJsonWebKey, k2)
+    }
+
+}
+
+@KtorExperimentalAPI
+class RedissonKeyStoreTest : KeyStoreTest<RedissonKeyStore> {
+
+    private val keystore = RedissonKeyStore(mapName = MAP_NAME, keySize = 512)
+    private val backingMap: MutableMap<String, PublicJsonWebKey> = getRedissonClient().getMap(MAP_NAME)
+
+    override fun getStore(): RedissonKeyStore = keystore
+    override fun getBackingMap(): MutableMap<String, PublicJsonWebKey> = backingMap
+
+    @Test
+    fun `Instanciate using default constructor`() {
+        assertDoesNotThrow { RedissonKeyStore() }
+    }
+
+}
+
+class MemoryKeyStoreTest : KeyStoreTest<MemoryKeyStore> {
+
+    private val backingMap: MutableMap<String, PublicJsonWebKey> = HashMap()
+    private val keystore = MemoryKeyStore(keyMap = backingMap, keySize = 512)
+
+    override fun getStore(): MemoryKeyStore = keystore
+    override fun getBackingMap(): MutableMap<String, PublicJsonWebKey> = backingMap
+
+
+    @Test
+    fun `Instanciate using default constructor`() {
+        assertDoesNotThrow { MemoryKeyStore() }
+    }
 }
 
 

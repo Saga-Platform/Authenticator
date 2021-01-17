@@ -1,12 +1,17 @@
 package com.saga.authenticator
 
 import at.favre.lib.crypto.bcrypt.*
+import com.typesafe.config.*
 import io.ktor.application.*
 import io.ktor.auth.*
+import io.ktor.config.*
 import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.util.*
+import org.redisson.*
+import org.redisson.api.*
+import org.redisson.config.Config
 import java.util.*
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
@@ -16,9 +21,8 @@ fun Application.module() {
     val users = UserService()
     val tokens = TokenService()
 
-    environment.monitor.subscribe(ApplicationStopPreparing) {
+    environment.monitor.subscribe(ApplicationStopped) {
         users.close()
-        tokens.close()
     }
 
     install(Authentication) {
@@ -51,8 +55,8 @@ fun Application.module() {
             val isTokenValid = validationData.first
             val subjectOrError = validationData.second
 
-            if (isTokenValid && subjectOrError is UUID) {
-                val user = users.findById(subjectOrError)
+            if (isTokenValid) {
+                val user = users.findById(UUID.fromString(subjectOrError))
                 if (user == null)
                     call.respond(HttpStatusCode.NotFound, "User ${validationData.second} doesn't exist")
                 else
@@ -84,3 +88,23 @@ fun Application.module() {
 
 fun passwordMatches(password: String, user: User?) =
     BCrypt.verifyer().verify(password.toByteArray(), user?.passwordHash).verified
+
+@KtorExperimentalAPI
+object RedissonClientInstance {
+
+    val client: RedissonClient
+
+    init {
+        val appConf = HoconApplicationConfig(ConfigFactory.load())
+        val conf = Config()
+        val singleConf = conf.useSingleServer()
+        singleConf.address = appConf.property("redis.url").getString()
+        singleConf.password = appConf.property("redis.password").getString()
+        singleConf.connectionMinimumIdleSize = 1
+        singleConf.connectionPoolSize = 2
+        client = Redisson.create(conf)
+    }
+}
+
+@KtorExperimentalAPI
+fun getRedissonClient(): RedissonClient = RedissonClientInstance.client

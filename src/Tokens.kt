@@ -10,11 +10,15 @@ import java.time.*
 import java.util.concurrent.*
 
 @KtorExperimentalAPI
-class TokenService : AutoCloseable {
-
-    private val accessKeys: KeyStore = RedissonKeyStore(mapName = "accessKeys")
-    private val refreshKeys: KeyStore =
-        RedissonKeyStore(mapName = "refreshKeys", rotateEvery = Every(31, TimeUnit.DAYS))
+class TokenService(
+    private val accessKeys: KeyStore = RedissonKeyStore(
+        mapName = "accessKeys"
+    ),
+    private val refreshKeys: KeyStore = RedissonKeyStore(
+        mapName = "refreshKeys",
+        rotateEvery = Every(31, TimeUnit.DAYS)
+    )
+) {
 
     fun getRefreshTokenAsCookie(user: User): Cookie = Cookie(
         "refreshToken",
@@ -22,28 +26,6 @@ class TokenService : AutoCloseable {
         path = "/refresh",
         httpOnly = true
     )
-
-    private fun getRefreshToken(user: User): String {
-        val key = refreshKeys.getCurrent()
-        val jws = JsonWebSignature()
-        val claims = JwtClaims()
-
-        claims.setGeneratedJwtId(64)
-        claims.issuer = "saga/auth"
-        claims.audience = listOf("saga/auth")
-        claims.subject = user.id.toString()
-        claims.notBefore = NumericDate.now()
-        claims.expirationTime = NumericDate.fromSeconds(ZonedDateTime.now().plusDays(30).toEpochSecond())
-        claims.claimsMap.putAll(mapOf(Pair("type", "refresh")))
-        claims.setIssuedAtToNow()
-
-        jws.payload = claims.toJson()
-        jws.key = key.privateKey
-        jws.keyIdHeaderValue = key.keyId
-        jws.algorithmHeaderValue = key.algorithm
-
-        return jws.compactSerialization
-    }
 
     fun getAccessToken(user: User): String {
         val key = accessKeys.getCurrent()
@@ -56,12 +38,8 @@ class TokenService : AutoCloseable {
         claims.subject = user.id.toString()
         claims.notBefore = NumericDate.now()
         claims.setExpirationTimeMinutesInTheFuture(15f)
-        claims.claimsMap.putAll(
-            mapOf(
-                Pair("type", "access"),
-                Pair("email", user.email)
-            )
-        )
+        claims.setStringClaim("type", "access")
+        claims.setStringClaim("email", user.email)
         claims.claimsMap.putAll(user.permissions)
         claims.setIssuedAtToNow()
 
@@ -73,7 +51,7 @@ class TokenService : AutoCloseable {
         return jws.compactSerialization
     }
 
-    fun isRefreshTokenValid(token: String?): Pair<Boolean, Any> {
+    fun isRefreshTokenValid(token: String?): Pair<Boolean, String> {
         val consumer = JwtConsumerBuilder()
             .setAllowedClockSkewInSeconds(5)
             .setExpectedIssuer("saga/auth")
@@ -96,8 +74,25 @@ class TokenService : AutoCloseable {
 
     fun getAccessJwksJson(): String = accessKeys.getJwks().toJson()
 
-    override fun close() {
-        accessKeys.close()
-        refreshKeys.close()
+    fun getRefreshToken(user: User): String {
+        val key = refreshKeys.getCurrent()
+        val jws = JsonWebSignature()
+        val claims = JwtClaims()
+
+        claims.setGeneratedJwtId(64)
+        claims.issuer = "saga/auth"
+        claims.audience = listOf("saga/auth")
+        claims.subject = user.id.toString()
+        claims.notBefore = NumericDate.now()
+        claims.expirationTime = NumericDate.fromSeconds(ZonedDateTime.now().plusDays(30).toEpochSecond())
+        claims.setStringClaim("type", "refresh")
+        claims.setIssuedAtToNow()
+
+        jws.payload = claims.toJson()
+        jws.key = key.privateKey
+        jws.keyIdHeaderValue = key.keyId
+        jws.algorithmHeaderValue = key.algorithm
+
+        return jws.compactSerialization
     }
 }
