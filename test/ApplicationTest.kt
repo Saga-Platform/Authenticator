@@ -18,6 +18,7 @@ private val expected = User(
 )
 
 @KtorExperimentalAPI
+@Disabled
 class ApplicationTest {
 
     @BeforeEach
@@ -166,6 +167,7 @@ class ApplicationTest {
 }
 
 @KtorExperimentalAPI
+@Disabled
 class GlobalHelpFunctionsTest {
 
     @Test
