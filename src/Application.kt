@@ -2,77 +2,72 @@ package com.saga.authenticator
 
 import at.favre.lib.crypto.bcrypt.*
 import com.mongodb.*
+import com.typesafe.config.*
 import io.ktor.application.*
 import io.ktor.auth.*
+import io.ktor.config.*
 import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
+import io.ktor.util.*
 import org.bson.*
-import org.litote.kmongo.coroutine.*
-import org.litote.kmongo.reactivestreams.*
+import org.redisson.*
+import org.redisson.api.*
+import org.redisson.config.Config
 import java.util.*
+import javax.annotation.processing.*
 
+typealias NoCoverage = Generated
+
+@NoCoverage
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
-
+@KtorExperimentalAPI
 fun Application.module() {
-    val settings = MongoClientSettings.builder()
-        .applicationName("Authenticator")
-        .applyConnectionString(ConnectionString("mongodb+srv://dev:7W0z8OqgiN3TOGhZ@cluster0.llizg.mongodb.net/saga-dev?authSource=admin&replicaSet=atlas-i32jff-shard-0&readPreference=primary&appname=MongoDB%20Compass&ssl=true"))
-        .build()
-    val mongoClient = KMongo.createClient(settings = settings).coroutine
-    val mongoDb = mongoClient.getDatabase("saga-auth")
-    val users = mongoDb.getCollection<User>()
-
-//    val conf = Config()
-//    conf.useSingleServer().address = "redis://redis-17469.c238.us-central1-2.gce.cloud.redislabs.com:17469"
-//    conf.useSingleServer().password = "SuperSecurePassword!"
-//    val redisClient = Redisson.create(conf)
-//
-//    //Key: token, value: user
-//    val map: Map<UUID, UUID> = redisClient.getMap("refreshTokens")
+    val users: UserService = MongoUserService()
+    val tokens = TokenService()
 
     install(Authentication) {
-        basic {
-            realm = "Sága Authentication Service"
-            validate {
-                users.findOne(Document.parse("{\"email\": \"" + it.name + "\"}")).takeIf { u ->
-                    BCrypt.verifyer().verify(it.password.toByteArray(), u?.passwordHash).verified
-                }
+        form {
+            validate { creds ->
+                users.findByEmail(creds.name)
+                    .takeIf { user ->
+                        passwordMatches(creds.password, user)
+                    }
             }
         }
     }
 
     routing {
         authenticate {
-            get("/authenticate") {
-                call.response.cookies.append(
-                    Cookie(
-                        "refreshToken",
-                        "test-token-value-will-be-uuid",
-                        path = "/refresh",
-                        httpOnly = true
-                    )
-                )
-                TODO("Create and save real refreshToken and return new JWT here")
-            }
+            post("/authenticate") {
+                if (call.authentication.principal is User) {
+                    val user = call.authentication.principal as User
 
-            get("/") {
-                call.respondText { call.authentication.principal.toString() }
+                    call.response.cookies.append(tokens.getRefreshTokenAsCookie(user))
+                    call.respondText(tokens.getAccessToken(user))
+                }
             }
         }
 
         get("/refresh") {
-            call.request.cookies["refreshToken"].let {
-                if (it != null)
-                    TODO("Return JWT here")
+            val token = call.request.cookies["refreshToken"]
+            val validationData = tokens.isRefreshTokenValid(token)
+            val isTokenValid = validationData.first
+            val subjectOrError = validationData.second
+
+            if (isTokenValid) {
+                val user = users.findById(UUID.fromString(subjectOrError))
+                if (user == null)
+                    call.respond(HttpStatusCode.NotFound, "User ${validationData.second} doesn't exist")
                 else
-                    call.respond(HttpStatusCode.Unauthorized, "Missing refresh token")
-            }
+                    call.respondText(tokens.getAccessToken(user))
+            } else
+                call.respond(HttpStatusCode.BadRequest, "Invalid JWT Refresh token: $subjectOrError")
         }
 
         get("/keys") {
-            TODO("Key rotation (creation and purge)")
+            call.respondText(tokens.getAccessJwksJson())
         }
 
         post("/register") {
@@ -90,4 +85,43 @@ fun Application.module() {
                 call.respond(HttpStatusCode.BadRequest, "Missing email or password")
         }
     }
+}
+
+fun passwordMatches(password: String, user: User?): Boolean {
+    return if (user == null)
+        false
+    else
+        BCrypt.verifyer().verify(password.toByteArray(), user.passwordHash).verified
+}
+
+@KtorExperimentalAPI
+object RedissonClientInstance {
+
+    val client: RedissonClient
+
+    init {
+        val appConf = HoconApplicationConfig(ConfigFactory.load())
+        val conf = Config()
+        val singleConf = conf.useSingleServer()
+        singleConf.address = appConf.property("redis.url").getString()
+        singleConf.password = appConf.property("redis.password").getString()
+        singleConf.connectionMinimumIdleSize = 1
+        singleConf.connectionPoolSize = 2
+        client = Redisson.create(conf)
+    }
+}
+
+@KtorExperimentalAPI
+fun getRedissonClient(): RedissonClient = RedissonClientInstance.client
+
+@KtorExperimentalAPI
+fun getMongoSettings(): MongoClientSettings {
+    val appConf = HoconApplicationConfig(ConfigFactory.load())
+    val connStringProp = appConf.property("mongo.connectionString")
+
+    return MongoClientSettings.builder()
+        .applicationName("Saga/Authenticator")
+        .uuidRepresentation(UuidRepresentation.JAVA_LEGACY)
+        .applyConnectionString(ConnectionString(connStringProp.getString()))
+        .build()
 }
