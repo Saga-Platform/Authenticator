@@ -2,7 +2,7 @@ buildscript {
     repositories {
         jcenter()
     }
-    
+
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
@@ -10,7 +10,6 @@ buildscript {
 
 apply plugin: 'kotlin'
 apply plugin: 'application'
-apply plugin: 'jacoco'
 
 group 'com.saga'
 version '0.0.1'
@@ -20,7 +19,7 @@ sourceSets {
     main.kotlin.srcDirs = main.java.srcDirs = ['src']
     test.kotlin.srcDirs = test.java.srcDirs = ['test']
     main.resources.srcDirs = ['resources']
-    test.resources.srcDirs = ['testresources']
+    test.resources.srcDirs = ['test/resources']
 }
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
@@ -37,21 +36,6 @@ repositories {
 
 tasks.test {
     useJUnitPlatform()
-    finalizedBy jacocoTestReport
-}
-
-tasks.jacocoTestReport {
-    dependsOn test
-    reports {
-        xml.enabled false
-        csv.enabled false
-        html.destination file("${buildDir}/jacocoHtml")
-    }
-}
-
-jacoco {
-    toolVersion = "0.8.5"
-    reportsDir = file("$buildDir/customJacocoReportDir")
 }
 
 dependencies {
@@ -65,7 +49,7 @@ dependencies {
     implementation "org.redisson:redisson:3.14.0"
     implementation group: 'org.bitbucket.b_c', name: 'jose4j', version: '0.7.3'
 
-    testImplementation ("io.ktor:ktor-server-tests:$ktor_version") {
+    testImplementation("io.ktor:ktor-server-tests:$ktor_version") {
         //noinspection GroovyAssignabilityCheck
         exclude group: "junit", module: "junit"
         //noinspection GroovyAssignabilityCheck
@@ -73,7 +57,10 @@ dependencies {
     }
 
     testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-api', version: '5.7.0'
-    testCompile group: 'org.assertj', name: 'assertj-core', version: '3.18.1'
     testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-engine', version: '5.7.0'
+    testCompile group: 'org.assertj', name: 'assertj-core', version: '3.18.1'
+    testCompile group: 'org.mockito', name: 'mockito-junit-jupiter', version: '3.7.7'
+    testCompile group: 'org.mockito', name: 'mockito-inline', version: '3.7.7'
+    testImplementation 'com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0'
 
 }

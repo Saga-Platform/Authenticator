@@ -1,6 +1,7 @@
 package com.saga.authenticator
 
 import at.favre.lib.crypto.bcrypt.*
+import com.mongodb.*
 import com.typesafe.config.*
 import io.ktor.application.*
 import io.ktor.auth.*
@@ -9,38 +10,38 @@ import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
 import io.ktor.util.*
+import org.bson.*
 import org.redisson.*
 import org.redisson.api.*
 import org.redisson.config.Config
 import java.util.*
+import javax.annotation.processing.*
 
+typealias NoCoverage = Generated
+
+@NoCoverage
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
 @KtorExperimentalAPI
 fun Application.module() {
-    val users = UserService()
+    val users: UserService = MongoUserService()
     val tokens = TokenService()
 
-    environment.monitor.subscribe(ApplicationStopped) {
-        users.close()
-    }
-
     install(Authentication) {
-        basic {
-            realm = "Sága Authentication Service"
+        form {
             validate { creds ->
                 users.findByEmail(creds.name)
-                    .takeIf { user -> passwordMatches(creds.password, user) }
+                    .takeIf { user ->
+                        passwordMatches(creds.password, user)
+                    }
             }
         }
     }
 
     routing {
         authenticate {
-            get("/authenticate") {
-                if (call.authentication.principal !is User)
-                    call.respond(HttpStatusCode.InternalServerError, "Principal was not an user, aborting")
-                else {
+            post("/authenticate") {
+                if (call.authentication.principal is User) {
                     val user = call.authentication.principal as User
 
                     call.response.cookies.append(tokens.getRefreshTokenAsCookie(user))
@@ -86,8 +87,12 @@ fun Application.module() {
     }
 }
 
-fun passwordMatches(password: String, user: User?) =
-    BCrypt.verifyer().verify(password.toByteArray(), user?.passwordHash).verified
+fun passwordMatches(password: String, user: User?): Boolean {
+    return if (user == null)
+        false
+    else
+        BCrypt.verifyer().verify(password.toByteArray(), user.passwordHash).verified
+}
 
 @KtorExperimentalAPI
 object RedissonClientInstance {
@@ -108,3 +113,15 @@ object RedissonClientInstance {
 
 @KtorExperimentalAPI
 fun getRedissonClient(): RedissonClient = RedissonClientInstance.client
+
+@KtorExperimentalAPI
+fun getMongoSettings(): MongoClientSettings {
+    val appConf = HoconApplicationConfig(ConfigFactory.load())
+    val connStringProp = appConf.property("mongo.connectionString")
+
+    return MongoClientSettings.builder()
+        .applicationName("Saga/Authenticator")
+        .uuidRepresentation(UuidRepresentation.JAVA_LEGACY)
+        .applyConnectionString(ConnectionString(connStringProp.getString()))
+        .build()
+}

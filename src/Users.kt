@@ -1,17 +1,15 @@
 package com.saga.authenticator
 
-import com.mongodb.*
-import com.typesafe.config.*
+import com.mongodb.client.result.*
 import io.ktor.auth.*
-import io.ktor.config.*
 import io.ktor.util.*
-import org.bson.*
 import org.bson.codecs.pojo.annotations.*
 import org.litote.kmongo.*
 import org.litote.kmongo.coroutine.*
 import org.litote.kmongo.reactivestreams.*
 import java.util.*
 
+@NoCoverage
 data class User(
     @BsonId val id: UUID,
     val email: String,
@@ -42,62 +40,27 @@ data class User(
     }
 }
 
-@KtorExperimentalAPI
-class UserService : AutoCloseable {
-    private val client: CoroutineClient
-    private val collection: CoroutineCollection<User>
+interface UserService {
+    suspend fun findById(id: UUID): User?
 
-    init {
-        val settings = getMongoSettings()
-        client = KMongo.createClient(settings = settings).coroutine
-        collection = client.getDatabase("saga-auth").getCollection()
-    }
+    suspend fun findByEmail(email: String): User?
 
-    suspend fun findById(id: UUID) = collection.findOne(User::id eq id)
+    suspend fun save(user: User): UpdateResult?
 
-    suspend fun findByEmail(email: String) = collection.findOne(User::email eq email)
-
-    suspend fun save(user: User) = collection.save(user)
-
-    override fun close() = client.close()
-
+    suspend fun delete(user: User): DeleteResult
 }
 
 @KtorExperimentalAPI
-fun getMongoSettings(): MongoClientSettings {
-    val settingBuilder = MongoClientSettings.builder()
-        .applicationName("Saga/Authenticator")
-        .uuidRepresentation(UuidRepresentation.JAVA_LEGACY)
+class MongoUserService(
+    private val client: CoroutineClient = KMongo.createClient(settings = getMongoSettings()).coroutine,
+    private val collection: CoroutineCollection<User> = client.getDatabase("saga-auth").getCollection()
+) : UserService {
 
-    val appConf = HoconApplicationConfig(ConfigFactory.load())
+    override suspend fun findById(id: UUID) = collection.findOne(User::id eq id)
 
-    val connStringProp = appConf.propertyOrNull("mongo.connectionString")
-    var connString: String
+    override suspend fun findByEmail(email: String) = collection.findOne(User::email eq email)
 
-    if (connStringProp != null)
-        connString = connStringProp.getString()
-    else {
-        val user = appConf.propertyOrNull("mongo.user")
-        val password = appConf.propertyOrNull("mongo.password")
-        val host = appConf.propertyOrNull("mongo.host")
-        val port = appConf.propertyOrNull("mongo.port")
-        val authDb = appConf.propertyOrNull("mongo.authDatabase")
+    override suspend fun save(user: User) = collection.save(user)
 
-        connString = "mongodb://"
-
-        if (user != null && password != null)
-            connString += user.getString() + ":" + password.getString() + "@"
-
-        connString += host?.getString() ?: "localhost"
-        connString += ":"
-        connString += port?.getString() ?: "27017"
-        connString += "/"
-
-        if (authDb != null)
-            connString += "?authSource=" + authDb.getString()
-
-    }
-
-    settingBuilder.applyConnectionString(ConnectionString(connString))
-    return settingBuilder.build()
+    override suspend fun delete(user: User) = collection.deleteOne(or(User::id eq user.id, User::email eq user.email))
 }

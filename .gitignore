@@ -5,3 +5,4 @@
 *.ipr
 *.iws
 /resources/application.conf
+/.idea/workspace.xml
