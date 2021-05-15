@@ -89,6 +89,7 @@ interface KeyStoreTest<T : KeyStore> {
 }
 
 @KtorExperimentalAPI
+@Disabled
 class RedissonKeyStoreTest : KeyStoreTest<RedissonKeyStore> {
 
     private val keystore = RedissonKeyStore(mapName = MAP_NAME, keySize = 512)
