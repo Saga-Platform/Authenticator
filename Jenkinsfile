@@ -9,7 +9,7 @@ pipeline {
         }
         stage('Test') {
             steps {
-                sh './gradlew clean test --no-daemo'
+                sh './gradlew clean test'
             }
             post {
                 always {
