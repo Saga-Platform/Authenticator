@@ -11,12 +11,12 @@ import redis.embedded.RedisServer
 
 class MockDatabasesExtension : ExtensionContext.Store.CloseableResource, BeforeAllCallback {
 
-    private val redisServer = RedisServer(50000)
+    private val redisServer = RedisServer(18574)
     private val mongodExecutable = MongodStarter.getDefaultInstance()
         .prepare(
             MongodConfig.builder()
                 .version(Version.Main.PRODUCTION)
-                .net(Net(50001, Network.localhostIsIPv6()))
+                .net(Net(18575, Network.localhostIsIPv6()))
                 .build()
         )
 
