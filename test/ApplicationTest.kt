@@ -171,6 +171,7 @@ class ApplicationTest {
 }
 
 @KtorExperimentalAPI
+@ExtendWith(MockDatabasesExtension::class)
 class GlobalHelpFunctionsTest {
 
     @Test
