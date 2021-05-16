@@ -104,7 +104,7 @@ object RedissonClientInstance {
         val conf = Config()
         val singleConf = conf.useSingleServer()
         singleConf.address = appConf.property("redis.url").getString()
-        singleConf.password = appConf.property("redis.password").getString()
+        singleConf.password = appConf.propertyOrNull("redis.password")?.getString()
         singleConf.connectionMinimumIdleSize = 1
         singleConf.connectionPoolSize = 2
         client = Redisson.create(conf)

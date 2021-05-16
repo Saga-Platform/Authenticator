@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.*
 import org.jose4j.jwk.*
 import org.jose4j.jws.*
 import org.junit.jupiter.api.*
+import org.junit.jupiter.api.extension.ExtendWith
 
 private const val MAP_NAME = "testMap"
 private val k1 = RsaJwkGenerator.generateJwk(512)
@@ -89,6 +90,7 @@ interface KeyStoreTest<T : KeyStore> {
 }
 
 @KtorExperimentalAPI
+@ExtendWith(MockDatabasesExtension::class)
 class RedissonKeyStoreTest : KeyStoreTest<RedissonKeyStore> {
 
     private val keystore = RedissonKeyStore(mapName = MAP_NAME, keySize = 512)
