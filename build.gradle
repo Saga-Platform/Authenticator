@@ -62,5 +62,7 @@ dependencies {
     testCompile group: 'org.mockito', name: 'mockito-junit-jupiter', version: '3.7.7'
     testCompile group: 'org.mockito', name: 'mockito-inline', version: '3.7.7'
     testImplementation 'com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0'
+    implementation group: 'it.ozimov', name: 'embedded-redis', version: '0.7.3'
+    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo:3.0.0'
 
 }

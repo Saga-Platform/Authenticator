@@ -1,14 +1,18 @@
 package com.saga.authenticator
 
-import at.favre.lib.crypto.bcrypt.*
+import at.favre.lib.crypto.bcrypt.BCrypt
 import io.ktor.http.*
 import io.ktor.server.testing.*
 import io.ktor.util.*
-import kotlinx.coroutines.*
-import org.assertj.core.api.Assertions.*
-import org.bson.*
-import org.junit.jupiter.api.*
+import kotlinx.coroutines.runBlocking
+import org.assertj.core.api.Assertions.assertThat
+import org.bson.UuidRepresentation
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import java.util.*
+
 
 private val expected = User(
     UUID.randomUUID(),
@@ -18,7 +22,7 @@ private val expected = User(
 )
 
 @KtorExperimentalAPI
-@Disabled
+@ExtendWith(MockDatabasesExtension::class)
 class ApplicationTest {
 
     @BeforeEach
@@ -167,7 +171,7 @@ class ApplicationTest {
 }
 
 @KtorExperimentalAPI
-@Disabled
+@ExtendWith(MockDatabasesExtension::class)
 class GlobalHelpFunctionsTest {
 
     @Test
